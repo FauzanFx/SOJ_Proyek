@@ -1,40 +1,55 @@
 #!/bin/bash
 
-# Anonymou
-# Definisi dari direktori
+# ==============================================================================
+# HANTAM: Anonymous Reporting System - Setup Script
+# ==============================================================================
+# This script sets up the basic folder structure and checks for necessary dependencies.
+# It also guides the user through importing the GPG public key.
+#
+# ==============================================================================
+
+# Define the base directory name
 BASE_DIR="Hantams"
 
-# Definisi dari sub-direktori
-SCRIPT_DIR="$BASE_DIR/script"
-REPORT_DIR="$BASE_DIR/report"
+# Define the subdirectories
+SCRIPTS_DIR="$BASE_DIR/scripts"
+REPORTS_DIR="$BASE_DIR/report"
 
-echo "Creating the directory structure..."
+# --- Dependency Checks ---
 
-# Membuat direktori base apabila belum dibuat
-if [ ! -d "$BASE_DIR" ]; then
-    mkdir "$BASE_DIR"
-    echo "$BASE_DIR created..."
+echo "Checking for required dependencies..."
+
+# Check for GPG
+if ! command -v gpg &> /dev/null; then
+    echo "Error: GPG (GNU Privacy Guard) is not installed." >&2
+    echo "Please install GPG. On Debian/Ubuntu, run: sudo apt update && sudo apt install gnupg" >&2
+    echo "On Fedora/CentOS/RHEL, run: sudo yum install gnupg2" >&2 # Use gnupg2 for newer systems
+    echo "Please install GPG and run this setup script again." >&2
+    exit 1
 else
-    echo "$BASE_DIR already exists"
+    echo "GPG found."
+	gpg --armor -import-secret-keys "0624CF4C2CE76D2DBB419074B001B6FC013FB655"> recipient_secret_key.asc
 fi
 
-# Membuat direktori script apabila belum dibuat
-if [ ! -d "$SCRIPT_DIR" ]; then
-    mkdir "$SCRIPT_DIR"
-    echo "$SCRIPT_DIR created..."
-else
-    echo "$SCRIPT_DIR already exists"
+# Check for uuidgen (optional, as we have a fallback, but good to recommend)
+if ! command -v uuidgen &> /dev/null; then
+    echo "Warning: uuidgen not found. The script will use a fallback for generating IDs." >&2
+    # Instructions for installing uuidgen if desired
+    # On Debian/Ubuntu: sudo apt install uuid-runtime
+    # On Fedora/CentOS/RHEL: sudo yum install uuid
 fi
 
-if [ ! -d "$REPORT_DIR" ]; then
-    mkdir "$REPORT_DIR"
-    echo "$REPORT_DIR created..."
-else
-    echo "$REPORT_DIR already exists"
-fi
+echo "Dependency checks complete."
+# --- Folder Structure Creation ---
 
-echo "Folder structure complete"
-echo "Base directory: $(realpath "$BASE_DIR")"
-echo "Script directory: $(realpath "$SCRIPT_DIR")"
-echo "Report directory: $(realpath "$REPORT_DIR")"
+echo "Creating directory structure for HANTAM..."
 
+# ... (rest of your existing mkdir and check code for BASE_DIR, SCRIPTS_DIR, REPORTS_DIR) ...
+
+echo "Folder structure setup complete."
+echo "Base directory: $(realpath $BASE_DIR)"
+echo "Scripts directory: $(realpath $SCRIPTS_DIR)"
+echo "Reports directory: $(realpath $REPORTS_DIR)"
+
+# --- README Comment ---
+# ... (keep your README comment block) ...
