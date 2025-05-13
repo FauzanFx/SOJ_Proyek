@@ -1,55 +1,76 @@
 #!/bin/bash
 
-# ==============================================================================
-# HANTAM: Anonymous Reporting System - Setup Script
-# ==============================================================================
-# This script sets up the basic folder structure and checks for necessary dependencies.
-# It also guides the user through importing the GPG public key.
-#
-# ==============================================================================
+# Setup script untuk HANTAM
+echo "======================================"
+echo               "HANTAM Setup"
+echo "======================================"
 
-# Define the base directory name
-BASE_DIR="Hantams"
+# Cek dan install dependensi jika belum ada
+install_if_missing() {
+    if ! command -v "$1" &>/dev/null; then
+        echo ">> '$1' tidak ditemukan. Mencoba menginstall..."
+        sudo apt-get update
+        sudo apt-get install -y "$1"
+        if [ $? -ne 0 ]; then
+            echo "Gagal menginstall $1. Harap install manual dan jalankan ulang setup." >&2
+            exit 1
+        fi
+    else
+        echo ">> '$1' sudah terpasang."
+    fi
+}
 
-# Define the subdirectories
-SCRIPTS_DIR="$BASE_DIR/scripts"
+echo "[1/4] Mengecek dependensi..."
+install_if_missing gpg
+install_if_missing uuidgen
+install_if_missing coreutils
+
+echo "[2/4] Mengecek direktori report/..."
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
+BASE_DIR="$(dirname "$SCRIPT_DIR")"
 REPORTS_DIR="$BASE_DIR/report"
 
-# --- Dependency Checks ---
+mkdir -p "$REPORTS_DIR"
+chmod 700 "$REPORTS_DIR"
+echo ">> Direktori laporan: $REPORTS_DIR"
 
-echo "Checking for required dependencies..."
-
-# Check for GPG
-if ! command -v gpg &> /dev/null; then
-    echo "Error: GPG (GNU Privacy Guard) is not installed." >&2
-    echo "Please install GPG. On Debian/Ubuntu, run: sudo apt update && sudo apt install gnupg" >&2
-    echo "On Fedora/CentOS/RHEL, run: sudo yum install gnupg2" >&2 # Use gnupg2 for newer systems
-    echo "Please install GPG and run this setup script again." >&2
-    exit 1
+echo "[3/4] Memverifikasi kunci publik GPG penerima..."
+GPG_KEY_ID="0624CF4C2CE76D2DBB419074B001B6FC013FB655"
+if ! gpg --list-keys "$GPG_KEY_ID" &>/dev/null; then
+    echo ">> Kunci GPG dengan ID $GPG_KEY_ID belum ada."
+    echo "Apakah Anda ingin mengimpor kunci dari file atau dari keyserver? [file/server]"
+    read -r choice
+    if [[ "$choice" == "file" ]]; then
+        echo "Masukkan path ke file public key (.asc):"
+        read -r keyfile
+        if [[ -f "$keyfile" ]]; then
+            gpg --import "$keyfile"
+        else
+            echo "File tidak ditemukan. Setup dihentikan."
+            exit 1
+        fi
+    elif [[ "$choice" == "server" ]]; then
+        echo "Mengimpor kunci dari keyserver..."
+        gpg --keyserver hkps://keys.openpgp.org --recv-keys "$GPG_KEY_ID"
+    else
+        echo "Pilihan tidak valid. Setup dihentikan."
+        exit 1
+    fi
 else
-    echo "GPG found."
-	gpg --armor -import-secret-keys "0624CF4C2CE76D2DBB419074B001B6FC013FB655"> recipient_secret_key.asc
+    echo ">> Kunci GPG sudah ada."
 fi
 
-# Check for uuidgen (optional, as we have a fallback, but good to recommend)
-if ! command -v uuidgen &> /dev/null; then
-    echo "Warning: uuidgen not found. The script will use a fallback for generating IDs." >&2
-    # Instructions for installing uuidgen if desired
-    # On Debian/Ubuntu: sudo apt install uuid-runtime
-    # On Fedora/CentOS/RHEL: sudo yum install uuid
+echo "[4/4] Setup selesai!"
+
+# Menawarkan menjalankan hantam.sh
+echo ""
+echo "Apakah Anda ingin langsung menjalankan HANTAM sekarang? [y/n]"
+read -r run_now
+
+if [[ "$run_now" == "y" ]]; then
+    echo "Menjalankan HANTAM..."
+    chmod +x "script/hantam.sh"
+    "script/hantam.sh"
+else
+    echo "Silakan jalankan 'hantam.sh' secara manual bila sudah siap."
 fi
-
-echo "Dependency checks complete."
-# --- Folder Structure Creation ---
-
-echo "Creating directory structure for HANTAM..."
-
-# ... (rest of your existing mkdir and check code for BASE_DIR, SCRIPTS_DIR, REPORTS_DIR) ...
-
-echo "Folder structure setup complete."
-echo "Base directory: $(realpath $BASE_DIR)"
-echo "Scripts directory: $(realpath $SCRIPTS_DIR)"
-echo "Reports directory: $(realpath $REPORTS_DIR)"
-
-# --- README Comment ---
-# ... (keep your README comment block) ...
