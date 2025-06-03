@@ -2,205 +2,247 @@
 
 source "$(dirname "$0")/config.sh"
 
-# Fungsi-fungsi
-show_menu(){
-	clear
-	echo "===================================="
-	echo "Hantam: Sistem Laporan Anonimus"
-	echo "===================================="
-	echo "1. Submit Laporan"
-	echo "2. Decrypt Tool"
-	echo "3. Exit"
-	echo "===================================="
-	echo "Enter your Choice:"
+#Fungsi Validasi Tanggal
+valid_date() {
+    if [[ $1 =~ ^([0-9]{2}):([0-9]{2}):([0-9]{4})$ ]]; then
+        day=${BASH_REMATCH[1]}
+        month=${BASH_REMATCH[2]}
+        year=${BASH_REMATCH[3]}
+        if date -d "$year-$month-$day" >/dev/null 2>&1; then
+            return 0
+        fi
+    fi
+    return 1
 }
 
-submit_report(){
-	echo "--- Submit Laporan ---"
-	echo "Deskripsikan kekerasan seksual yang anda alami"
-	echo "Berikan detail mengenai waktu dan tempat kejadian."
-	echo "JANGAN MEMASUKKAN INFORMASI PRIBADI YANG DAPAT MENGIDENTIFIKASI DIRI ANDA ATAUPUN ORANG LAIN."
-	echo "Tekan Enter sebanyak 2 kali apabila sudah selesai."
-	echo "-----------------------------------------------"
-
-	report_content=""
-
-	while IFS= read -r line; do
-		if [[ -z "$line" ]]; then
-			break
-		fi
-		report_content+="$(printf "%s\\n" "$line")"
-	done
-
-	TIMESTAMP=$(date -u +"%Y-%m-%d %H:%M:%S UTC")
-
-	if command -v uuidgen &> /dev/null; then
-		REPORT_ID=$(uuidgen)
-	else
-		REPORT_ID=$(head -c 16 /dev/urandom | od -An -tx1 | tr -d ' ' | md5sum | head -c 32)
-		echo "Warning: uuidgen not found. Using a fallback method to generate ID." >&2
-	fi
-
-	formatted_report="Report ID: $REPORT_ID\nTimestamp: $TIMESTAMP\n-----------------------------------------------\n$report_content"
-
-	echo "Mengenkripsi laporan..."
-	encrypted_report=$(echo -e "$formatted_report" | gpg --encrypt --recipient "$GPG_RECIPIENT_KEY" --armor --output -)
-
-	if [ $? -eq 0 ]; then
-		echo "Laporan berhasil dienkripsi."
-		REPORT_FILENAME="$REPORTS_DIR/${REPORT_ID}.asc"
-		echo "Menyimpan laporan terenkripsi ke $REPORT_FILENAME ..."
-		echo "$encrypted_report" > "$REPORT_FILENAME"
-
-		if [ $? -eq 0 ]; then
-			chmod 600 "$REPORT_FILENAME"
-			touch "$REPORTS_DIR/${REPORT_ID}.status.undecrypted"
-			echo "Laporan berhasil disimpan dan ditandai sebagai belum didekripsi."
-			echo "-----------------------------------------------"
-			echo "Laporan berhasil dikirim dan disimpan dengan aman."
-			echo "Terima kasih atas keberanian Anda."
-			echo "-----------------------------------------------"
-		else
-			echo "Error: Gagal menyimpan laporan terenkripsi ke $REPORT_FILENAME." >&2
-		fi
-	else
-		echo "Error: Gagal mengenkripsi laporan." >&2
-	fi
-
-	echo "Tekan Enter untuk kembali ke menu utama..."
-	read -r
+# Fungsi Menu Utama
+show_menu() {
+    clear
+    echo "===================================="
+    echo "Hantam: Sistem Laporan Anonimus"
+    echo "===================================="
+    echo "1. Submit Laporan"
+    echo "2. Decrypt Tool"
+    echo "3. Exit"
+    echo "===================================="
+    read -p "Masukkan Pilihanmu: " choice
+    case "$choice" in
+        1) submit_report ;;
+        2) show_menu_decrypt ;;
+        3) echo "Terima kasih telah menggunakan Hantam." && exit 0 ;;
+        *) echo "Pilihan tidak valid. Tekan Enter untuk mencoba lagi." && read -r && show_menu ;;
+    esac
 }
 
+#Template Header Untuk Submit Report
+template(){
+    clear
+    echo "--- Submit Laporan ---"
+    echo "Anda akan diminta mengisi beberapa detail. Jawab sejujurnya."
+    echo "JANGAN MEMASUKKAN INFORMASI PRIBADI."
+    echo "-----------------------------------------------"
+}
+
+#Fungsi Submit Report
+submit_report() {
+    while true; do
+        template
+        read -p "Tanggal Kejadian (Format DD:MM:YYYY, Wajib): " tanggal_kejadian
+        if [[ -z "$tanggal_kejadian" ]]; then
+            echo "Input tanggal wajib diisi."
+            read -r
+        elif ! valid_date "$tanggal_kejadian"; then
+            echo "Format salah atau tanggal tidak valid. Gunakan format DD:MM:YYYY."
+            read -r
+        else
+            break
+        fi
+    done
+    
+    while true; do
+        template
+        read -p "Lokasi Kejadian (Wajib): " lokasi_kejadian
+        if [[ -z "$lokasi_kejadian" ]]; then
+            echo "Lokasi wajib diisi."
+            read -r
+        else
+            break
+        fi
+    done
+
+    declare -A unique
+    tindakan_terpilih=()
+
+    while true; do
+        template
+        echo "Kekerasan yang dialami:"
+        echo "1. Fisik"
+        echo "2. Verbal"
+        echo "3. Non-Verbal"
+        echo "4. Online"
+        echo "5. Lainnya"
+        echo "S. Selesai memilih"
+        read -p "Pilihan Anda [1-5/S]: " pilihan
+
+        case "$pilihan" in
+            1) val="Fisik" ;;
+            2) val="Verbal" ;;
+            3) val="Non-Verbal" ;;
+            4) val="Online" ;;
+            5)
+                read -p "Masukkan jenis lainnya: " lain
+                val="Lainnya: ${lain:-[Tidak disebutkan]}"
+                ;;
+            s|S) break ;;
+            *) echo "Pilihan tidak valid. Tekan Enter untuk lanjut..." ; read ; continue ;;
+        esac
+
+        if [[ -n "$val" && -z "${unique["$val"]}" ]]; then
+            unique["$val"]=1
+            tindakan_terpilih+=("$val")
+            echo "Menambahkan: $val"
+            read -r
+        else
+            echo "Pilihan sudah ada atau kosong."
+            read -r -p "Tekan Enter untuk lanjut..."
+        fi
+    done
+
+    echo ""
+    echo "Tindakan terpilih:"
+    for t in "${tindakan_terpilih[@]}"; do
+        echo "- $t"
+    done
+    # Deskripsi
+    template
+    echo "Deskripsi Kronologis (Opsional):"
+    echo "Tekan Enter dua kali untuk mengakhiri input."
+    report_content=""
+    while IFS= read -r line; do
+        [ -z "$line" ] && break
+        report_content+="$line\n"
+    done
+
+    # Proses Laporan
+    TIMESTAMP=$(TZ=Asia/Jakarta date +"%Y-%m-%d %H:%M:%S WIB")
+    if command -v uuidgen &> /dev/null; then
+        REPORT_ID=$(uuidgen)
+    else
+        REPORT_ID=$(head -c 16 /dev/urandom | md5sum | cut -d' ' -f1)
+    fi
+
+    formatted_tindakan=""
+    for item in "${tindakan_terpilih[@]}"; do
+        formatted_tindakan+="- $item\n"
+    done
+    [ -z "$formatted_tindakan" ] && formatted_tindakan="[Tidak disebutkan]\n"
+
+    formatted_report="Report ID: $REPORT_ID\n"
+    formatted_report+="Timestamp: $TIMESTAMP\n"
+    formatted_report+="===============================================\n\n"
+    formatted_report+="Tanggal Kejadian: $tanggal_kejadian\n"
+    formatted_report+="Lokasi Kejadian: $lokasi_kejadian\n\n"
+    formatted_report+="Bentuk Tindak Pelecehan:\n${formatted_tindakan}\n"
+    formatted_report+="-----------------------------------------------\n"
+    formatted_report+="Deskripsi Kronologis:\n${report_content:-[Tidak diisi]}\n"
+
+    echo "Mengenkripsi laporan..."
+    encrypted_report=$(echo -e "$formatted_report" | gpg --encrypt --recipient "$GPG_RECIPIENT_KEY" --armor --output -)
+
+    if [ $? -eq 0 ]; then
+        REPORT_FILENAME="$REPORTS_DIR/${REPORT_ID}.asc"
+        echo "$encrypted_report" > "$REPORT_FILENAME" && chmod 600 "$REPORT_FILENAME"
+        touch "$REPORTS_DIR/${REPORT_ID}.status.undecrypted"
+        echo "Laporan berhasil dikirim dan disimpan."
+    else
+        echo "Error: Gagal mengenkripsi laporan."
+    fi
+
+    echo "Tekan Enter untuk kembali ke menu utama..."
+    read -r
+    show_menu
+}
+
+#Menampilkan Daftar Laporan
 daftar_laporan() {
-	echo "--- Daftar Laporan Terenkripsi ---"
+    shopt -s nullglob
+    files=("$REPORTS_DIR"/*.asc)
+    shopt -u nullglob
 
-	shopt -s nullglob
-	files=("$REPORTS_DIR"/*.asc)
-	shopt -u nullglob
+    if [ ${#files[@]} -eq 0 ]; then
+        echo "Tidak ada laporan."
+        return 1
+    fi
 
-	if [ ${#files[@]} -eq 0 ]; then
-		echo "Tidak ada laporan terenkripsi di direktori $REPORTS_DIR."
-		return 1
-	fi
+    file_list=()
+    i=1
+    printf "%-4s %-35s %-20s %-15s\n" "No." "Nama File" "Tanggal Masuk" "Status"
+    echo "---------------------------------------------------------------------"
+    for file in "${files[@]}"; do
+        filename="$(basename "$file")"
+        base="${filename%.asc}"
+        tanggal=$(stat -c %y "$file" | cut -d'.' -f1)
+        status="[ ]"
+        [ -f "$REPORTS_DIR/${base}.status.decrypted" ] && status="[*]"
+        printf "%-4s %-35s %-20s %-15s\n" "$i." "$filename" "$tanggal" "$status"
+        file_list+=("$filename")
+        ((i++))
+    done
+    echo "---------------------------------------------------------------------"
 
-	file_list=()
-	i=1
-	printf "%-4s %-35s %-20s %-15s\n" "No." "Nama File" "Tanggal Masuk" "Status"
-	echo "----------------------------------------------------------------------------"
-
-	for file in "${files[@]}"; do
-		filename="$(basename "$file")"
-		basename_noext="${filename%.asc}"
-		tanggal=$(stat -c %y "$file" | cut -d'.' -f1)
-
-		if [ -f "$REPORTS_DIR/${basename_noext}.status.decrypted" ]; then
-			status="✅"
-		else
-			status="❌"
-		fi
-
-		printf "%-4s %-35s %-20s %-15s\n" "$i." "$filename" "$tanggal" "$status"
-		file_list+=("$filename")
-		((i++))
-	done
-
-	echo "----------------------------------------------------------------------------"
-	return 0
+    return 0
 }
 
+#Mendkripsi Laporan
 dekripsi_laporan() {
-	nama_berkas="$1"
+    local nama_berkas="$1"
+    if [ ! -f "$REPORTS_DIR/$nama_berkas" ]; then
+        echo "File tidak ditemukan: $nama_berkas"
+        return 1
+    fi
 
-	if [ ! -f "$REPORTS_DIR/$nama_berkas" ]; then
-		echo "Error: Berkas tidak ditemukan: $REPORTS_DIR/$nama_berkas" >&2
-		return 1
-	fi
-
-	echo "--- Mendekripsi Laporan: $nama_berkas ---"
-
-	isi_didekripsi=$(gpg --decrypt --output - "$REPORTS_DIR/$nama_berkas" 2>&1)
-
-	if [ $? -eq 0 ]; then
-		echo "Laporan berhasil didekripsi."
-		echo "-----------------------------------"
-		echo "$isi_didekripsi"
-		echo "-----------------------------------"
-
-		# Tandai laporan sebagai sudah didekripsi
-		report_base="${nama_berkas%.asc}"
-		rm -f "$REPORTS_DIR/${report_base}.status.undecrypted"
-		touch "$REPORTS_DIR/${report_base}.status.decrypted"
-	else
-		echo "Error: Gagal mendekripsi laporan '$nama_berkas'." >&2
-		echo "Kemungkinan penyebab:" >&2
-		echo "- File bukan file terenkripsi GPG yang valid." >&2
-		echo "- Kunci privat tidak tersedia di keyring Anda." >&2
-		echo "- Passphrase yang dimasukkan salah." >&2
-		echo "Pesan dari GPG:" >&2
-		echo "$isi_didekripsi" >&2
-	fi
-
-	echo "Tekan Enter untuk melanjutkan..."
-	read -r
+    echo "Mendekripsi $nama_berkas..."
+    hasil=$(gpg --decrypt --output - "$REPORTS_DIR/$nama_berkas" 2>&1)
+    if [ $? -eq 0 ]; then
+        echo "-------------------------------------------"
+        echo -e "$hasil"
+        echo "-------------------------------------------"
+        base="${nama_berkas%.asc}"
+        rm -f "$REPORTS_DIR/${base}.status.undecrypted"
+        touch "$REPORTS_DIR/${base}.status.decrypted"
+    else
+        echo "Gagal dekripsi: $hasil"
+    fi
+    echo "Tekan Enter untuk melanjutkan..."
+    read -r
 }
 
-show_menu_decrypt(){
-	while true; do
-		clear
-		echo "==============================================="
-		echo "        HANTAM: Alat Dekripsi Laporan"
-		echo "==============================================="
+#Menampilkan Menu Decrypt Tool
+show_menu_decrypt() {
+    while true; do
+        clear
+        echo "==============================================="
+        echo "        HANTAM: Alat Dekripsi Laporan          "
+        echo "==============================================="
 
-		daftar_laporan
+        if ! daftar_laporan; then
+            echo ""
+            read -p "Tidak ada laporan yang ditemukan!" -r
+            break 
+        fi
 
-		if [ $? -ne 0 ]; then
-			echo "-----------------------------------"
-			echo "Tidak ada laporan untuk didekripsi."
-			echo "Tekan Enter untuk keluar..."
-			read -r
-			return
-		fi
-
-		echo "Masukkan nomor laporan yang ingin didekripsi (atau 'q' untuk keluar):"
-		read -r pilihan
-
-		if [[ "$pilihan" == "q" || "$pilihan" == "Q" ]]; then
-			return
-		fi
-
-		if [[ "$pilihan" =~ ^[0-9]+$ ]]; then
-			index=$((pilihan - 1))
-			if [ "$index" -ge 0 ] && [ "$index" -lt "${#file_list[@]}" ]; then
-				BERKAS_LAPORAN="${file_list[$index]}"
-				dekripsi_laporan "$BERKAS_LAPORAN"
-			else
-				echo "Nomor tidak valid. Tekan Enter untuk melanjutkan..."
-				read -r
-				continue
-			fi
-		else
-			echo "Input tidak valid. Masukkan nomor atau 'q' untuk keluar."
-			read -r
-		fi
-	done
+        echo ""
+        read -p "Masukkan nomor laporan yang ingin didekripsi (atau 'q' untuk kembali): " pilihan
+        if [[ "$pilihan" == "q" || "$pilihan" == "Q" ]]; then
+            break
+        elif [[ "$pilihan" =~ ^[0-9]+$ ]] && (( pilihan >= 1 && pilihan <= ${#file_list[@]} )); then
+            dekripsi_laporan "${file_list[$((pilihan-1))]}"
+        else
+            echo "Pilihan tidak valid." && read -p "Tekan Enter untuk lanjut..." -r
+        fi
+    done
+    show_menu 
 }
 
-# Main Loop
-while true; do
-	show_menu
-	read -r choice
-
-	case "$choice" in
-		1) submit_report ;;
-		2) show_menu_decrypt ;;
-		3)
-			echo "Keluar dari HANTAM. Terima Kasih"
-			exit 0
-			;;
-		*) 
-			echo "Invalid choice. Masukkan 1 atau 2!"
-			echo "Tekan Enter untuk kembali..."
-			read -r
-			;;
-	esac
-done
+# Eksekusi awal
+show_menu
