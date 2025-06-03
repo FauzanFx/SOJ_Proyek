@@ -8,7 +8,18 @@ valid_date() {
         day=${BASH_REMATCH[1]}
         month=${BASH_REMATCH[2]}
         year=${BASH_REMATCH[3]}
+
         if date -d "$year-$month-$day" >/dev/null 2>&1; then
+            local input_date_seconds
+            input_date_seconds=$(date -d "$year-$month-$day" +%s)
+            
+            local current_seconds
+            current_seconds=$(date +%s)
+
+            if (( input_date_seconds > current_seconds )); then
+                return 1
+            fi
+
             return 0
         fi
     fi
@@ -246,3 +257,4 @@ show_menu_decrypt() {
 
 # Eksekusi awal
 show_menu
+ 
