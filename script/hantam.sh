@@ -8,18 +8,16 @@ valid_date() {
         day=${BASH_REMATCH[1]}
         month=${BASH_REMATCH[2]}
         year=${BASH_REMATCH[3]}
-
         if date -d "$year-$month-$day" >/dev/null 2>&1; then
             local input_date_seconds
             input_date_seconds=$(date -d "$year-$month-$day" +%s)
-            
             local current_seconds
             current_seconds=$(date +%s)
-
-            if (( input_date_seconds > current_seconds )); then
+            local one_year_ago_seconds
+            one_year_ago_seconds=$(date -d "1 year ago" +%s)
+            if (( input_date_seconds > current_seconds )) || (( input_date_seconds < one_year_ago_seconds )); then
                 return 1
             fi
-
             return 0
         fi
     fi
